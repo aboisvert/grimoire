@@ -82,6 +82,38 @@ release:
         "dist/grim-${v}-linux-amd64" \
         "dist/SHA256SUMS"
     echo "Published https://github.com/aboisvert/grimoire/releases/tag/v${v}"
+    next="$(just next-patch "$v")"
+    just bump-version "$next"
+    git add grimoire.nimble src/grimoire/cli.nim tests/topcompat.nim USAGE.md
+    git commit -m "Bump version to ${next}"
+    git push origin main
+    echo "Development version is now ${next} (commit and push to main)"
+
+# Print semver with patch incremented (e.g. 0.1.0 -> 0.1.1)
+next-patch version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    v="{{version}}"
+    IFS='.' read -r major minor patch <<< "$v"
+    if [[ -z "${major:-}" || -z "${minor:-}" || -z "${patch:-}" ]]; then
+        echo "invalid semver: $v" >&2
+        exit 1
+    fi
+    echo "${major}.${minor}.$((patch + 1))"
+
+# Update version strings for the next development cycle
+bump-version to:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    from="$(just version)"
+    to="{{to}}"
+    if [[ "$from" == "$to" ]]; then
+        exit 0
+    fi
+    sed -i '' "s/^version       = \"${from}\"/version       = \"${to}\"/" grimoire.nimble
+    sed -i '' "s/Version\* = \"${from}\"/Version* = \"${to}\"/" src/grimoire/cli.nim
+    sed -i '' "s/grim ${from}/grim ${to}/g" tests/topcompat.nim
+    sed -i '' "s/currently \`${from}\`/currently \`${to}\`/" USAGE.md
 
 preflight version:
     #!/usr/bin/env bash

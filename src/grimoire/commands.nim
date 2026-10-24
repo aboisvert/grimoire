@@ -3,10 +3,6 @@
 import std/[os, strutils, json, sequtils, terminal, osproc, envvars, strtabs]
 import grimoire/[cli, store, gpg, reference, opcmd, auth, secretwrap, items, secretshome]
 
-proc die(msg: string) {.noreturn.} =
-  stderr.writeLine "grim: " & msg
-  quit(1)
-
 proc padRight(s: string, width: int): string =
   if s.len >= width:
     s
@@ -319,7 +315,7 @@ proc runVaultDelete(args: seq[string]) =
   while i < args.len:
     let arg = args[i]
     if arg.startsWith("-"):
-      let (name, inline, hasInline) = splitFlag(arg)
+      let (name, _, _) = splitFlag(arg)
       if name == "force":
         force = true
       else:
@@ -589,7 +585,7 @@ proc runRead(args: seq[string]) =
   while i < args.len:
     let arg = args[i]
     if arg.startsWith("-"):
-      let (name, inline, hasInline) = splitFlag(arg)
+      let (name, _, _) = splitFlag(arg)
       if name == "no-newline":
         noNewline = true
       else:

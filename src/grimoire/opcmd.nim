@@ -9,34 +9,6 @@ proc skipFormatFlag(args: seq[string], i: var int, inline: string, hasInline: bo
   elif inline.toLowerAscii != "json":
     failUsage("this command requires --format json")
 
-proc popAccountFlag(args: var seq[string]): string =
-  var i = 0
-  while i < args.len:
-    if args[i] == "--account" and i + 1 < args.len:
-      result = args[i + 1]
-      args.delete(i + 1)
-      args.delete(i)
-      return result
-    if args[i].startsWith("--account="):
-      result = args[i][10 ..^ 1]
-      args.delete(i)
-      return result
-    inc i
-  ""
-
-proc requireFormatJson(args: seq[string]) =
-  var fmt = ""
-  for arg in args:
-    if arg.startsWith("--format="):
-      fmt = arg[9 ..^ 1]
-    elif arg == "--format" and fmt.len == 0:
-      discard
-  for i, arg in args:
-    if arg == "--format" and i + 1 < args.len:
-      fmt = args[i + 1]
-  if fmt.toLowerAscii != "json":
-    failUsage("this command requires --format json")
-
 proc runAccountList(args: seq[string]) =
   var fmt = "json"
   var i = 0
@@ -55,41 +27,6 @@ proc runAccountList(args: seq[string]) =
   connectForbidden()
   let acct = ensureLocalAccount()
   echoJson(%*[acct])
-
-proc runVaultListOp(args: seq[string]) =
-  var fmt = "json"
-  var account = ""
-  var i = 0
-  while i < args.len:
-    let arg = args[i]
-    if arg.startsWith("-"):
-      let (name, inline, hasInline) = splitFlag(arg)
-      case name
-      of "format":
-        if hasInline:
-          fmt = inline
-        else:
-          fmt = readFlagValue(args, i, "--format")
-      of "account":
-        if hasInline:
-          account = inline
-        else:
-          account = readFlagValue(args, i, "--account")
-      else:
-        failUsage("unknown option: " & arg)
-    else:
-      failUsage("unexpected argument: " & arg)
-    inc i
-  let ctx = resolveAuth(account)
-  let ids = filterVaultIds(ctx)
-  if fmt.toLowerAscii == "json":
-    var arr = newJArray()
-    for vid in ids:
-      let m = readVaultMeta(vid)
-      arr.add %*{"id": m.id, "name": m.name}
-    echoJson(arr)
-  else:
-    failUsage("vault list for op compatibility requires --format json")
 
 proc runVaultCreateOp*(args: seq[string]) =
   var name = ""
@@ -345,7 +282,7 @@ proc runItemEdit(args: seq[string]) =
     raise newException(GrimError, "write access denied for vault: " & vid)
   let iid = resolveItemInVault(vid, itemId)
   let itemTpl = parseJson(readAll(stdin))
-  let stored = persistItemFromTemplate(vid, itemTpl, existingId = iid)
+  discard persistItemFromTemplate(vid, itemTpl, existingId = iid)
   echoJson itemForOutput(vid, readItemDoc(vid, iid), reveal = false)
 
 proc runServiceAccountCreate(args: seq[string]) =
