@@ -7,9 +7,6 @@ proc die(msg: string) {.noreturn.} =
   stderr.writeLine "grim: " & msg
   quit(1)
 
-proc echoJson(node: JsonNode) =
-  stdout.writeLine $node
-
 proc padRight(s: string, width: int): string =
   if s.len >= width:
     s

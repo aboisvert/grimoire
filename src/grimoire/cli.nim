@@ -1,6 +1,8 @@
 ## Shared CLI helpers and usage errors.
 
-import std/[strutils, terminal, os]
+import std/[strutils, terminal, os, json]
+import grimoire/jsonfmt
+export jsonfmt.formatJson
 
 type
   UsageError* = object of CatchableError
@@ -91,6 +93,9 @@ proc parseFormat*(s: string): OutputFormat =
   of "human": ofHuman
   of "json": ofJson
   else: failUsage("unknown --format: " & s)
+
+proc echoJson*(node: JsonNode) =
+  stdout.writeLine formatJson(node)
 
 proc readFlagValue*(
     args: seq[string], i: var int, dashed: string): string =

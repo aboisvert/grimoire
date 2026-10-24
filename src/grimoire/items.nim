@@ -1,7 +1,7 @@
 ## op-shaped items stored as JSON under each vault.
 
 import std/[json, os, strutils, random, uri, times]
-import grimoire/[store, gpg, secretshome]
+import grimoire/[store, gpg, secretshome, jsonfmt]
 
 const OpItemIdLen* = 26
 
@@ -52,7 +52,7 @@ proc writeItemDoc*(vaultId: string, doc: JsonNode) =
   ensureItemsDir(vaultId)
   let path = itemFilePath(vaultId, itemId)
   let tmp = path & ".tmp." & $getTime().toUnix()
-  writeFile(tmp, $doc)
+  writeFile(tmp, formatJson(doc))
   setFilePermissions(tmp, {fpUserRead, fpUserWrite})
   moveFile(tmp, path)
   var vault = readVaultMeta(vaultId)

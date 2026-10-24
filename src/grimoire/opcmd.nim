@@ -3,9 +3,6 @@
 import std/[os, strutils, json, times, re]
 import grimoire/[cli, store, gpg, items, auth, secretshome]
 
-proc echoJson(node: JsonNode) =
-  stdout.writeLine $node
-
 proc skipFormatFlag(args: seq[string], i: var int, inline: string, hasInline: bool) =
   if not hasInline:
     discard readFlagValue(args, i, "--format")
@@ -260,7 +257,7 @@ proc runItemGet(args: seq[string]) =
       if not vaultAllowed(ctx, vid, false):
         raise newException(GrimError, "access denied for vault: " & vid)
       let doc = readItemDoc(vid, iid)
-      stdout.write $itemForOutput(vid, doc, reveal = false)
+      stdout.write formatJson(itemForOutput(vid, doc, reveal = false))
     return
   if vaultFlag.len == 0:
     failUsage("item get requires --vault")

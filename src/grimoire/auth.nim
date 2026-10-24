@@ -2,7 +2,7 @@
 
 import std/[json, os, strutils, times, parseutils, random, tables]
 import checksums/sha1
-import grimoire/store
+import grimoire/[store, jsonfmt]
 
 proc randomLowerAlnum(n: int): string =
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -114,7 +114,7 @@ proc saveServiceAccount*(
   if expiresAt.len > 0:
     doc["expires_at"] = %expiresAt
   let path = serviceAccountsPath() / tokenHash(token)
-  writeFile(path, $doc)
+  writeFile(path, formatJson(doc))
   setFilePermissions(path, {fpUserRead, fpUserWrite})
 
 proc generateServiceToken*(): string =
