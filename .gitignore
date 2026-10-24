@@ -1,4 +1,5 @@
 grim
+dist/
 nimcache/
 *.out
 .cursor/
