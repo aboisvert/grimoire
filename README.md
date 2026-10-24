@@ -1,6 +1,20 @@
 # grimoire
 
-**grim** is a local, GPG-backed password manager with a CLI shaped like 1Password (`op`) for scripts and automation. Vaults, items, and secrets live on disk under `GRIM_HOME` (default `~/.grimoire`).
+*Grimoire* means “book of secrets” in French.   Here we use 'grim' for short.
+
+**grim** is a local, GPG-backed password manager with a CLI shaped like 1Password (`op`) for scripts and automation. Vaults, items, and secrets live (encrypted) on disk under `GRIM_HOME` (default `~/.grimoire`).
+
+### How vaults are encrypted
+
+Each vault is always bound to a **GPG recipient**—a public/private key pair (yours or a group's). That key is what ultimately controls who can open the vault.
+
+You can encrypt item data in either of two ways:
+
+1. **Directly to the GPG key** — fields are encrypted so only the holder of the matching private key can decrypt them.
+
+2. **With a shared secret** — a symmetric passphrase encrypts the fields instead. The passphrase is **not** stored in plain text in the vault; it lives under `SECRETS_HOME` in a file that is encrypted to the **same** GPG recipient. You still need the matching GPG private key to decrypt that file and use the vault.
+
+See [USAGE.md](USAGE.md) for `grim vault create`, `--gpg-recipient`, and `--secret`.
 
 ## Build
 
