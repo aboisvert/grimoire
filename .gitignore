@@ -1,3 +1,11 @@
 grim
 nimcache/
 *.out
+
+# Extensionless files (compiled binaries) under src/ and tests/
+/src/**
+!/src/**/
+!/src/**/*.*
+/tests/**
+!/tests/**/
+!/tests/**/*.*
