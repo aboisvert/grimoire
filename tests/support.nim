@@ -1,7 +1,10 @@
-import std/[os, osproc, strutils, times]
+import std/[os, osproc, strutils, times, random]
 
 proc makeTempDir(prefix: string): string =
-  let base = getTempDir() / (prefix & "-" & $getTime().toUnix())
+  # Sub-second tests (e.g. CI) must not reuse the same path; second-only
+  # timestamps caused cross-test GRIM_HOME leakage and flaky op compat tests.
+  let base = getTempDir() / (
+    prefix & "-" & $getTime().toUnixFloat() & "-" & $rand(1_000_000_000))
   createDir(base)
   result = base
 

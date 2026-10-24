@@ -123,7 +123,12 @@ suite "op compatibility":
       "secret", "create", "envsecret", "--vault", "Automation", "--value", "RESOLVED-VAL"])
     let list = parseJson(runOut(@[
       "item", "list", "--format", "json", "--vault", "Automation"]))
-    let itemId = list[0]["id"].getStr()
+    var itemId = ""
+    for entry in list:
+      if entry["title"].getStr() == "envsecret":
+        itemId = entry["id"].getStr()
+        break
+    check itemId.len > 0
     let detail = parseJson(runOut(@[
       "item", "get", itemId, "--vault", "Automation", "--format", "json"]))
     let fieldRef = detail["fields"][0]["reference"].getStr()
