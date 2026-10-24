@@ -84,6 +84,20 @@ suite "op compatibility":
       "item", "get", itemId, "--vault", "Automation", "--format", "json", "--reveal"])
     check secret in revealed
 
+  test "item create uses default vault":
+    createAutomationVault(fpr)
+    discard runOut(@["vault", "use", "Automation"])
+    let tpl = $(%*{
+      "title": "Default Vault Item",
+      "category": "API_CREDENTIAL",
+      "fields": [%*{"id": "credential", "type": "CONCEALED", "value": "x"}],
+    })
+    discard runOut(@["item", "create", "-", "--format", "json"], tpl)
+    let list = parseJson(runOut(@[
+      "item", "list", "--format", "json", "--vault", "Automation"]))
+    check list.len == 1
+    check list[0]["title"].getStr() == "Default Vault Item"
+
   test "read op ref newline default":
     createAutomationVault(fpr)
     const secret = "FICTIONAL-READ-SECRET"

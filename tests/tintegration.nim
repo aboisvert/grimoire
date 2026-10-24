@@ -1,19 +1,30 @@
-import std/[unittest, osproc, strutils, os, times, envvars]
+import std/[unittest, osproc, strutils, os, times, envvars, streams]
 import support
 
+proc startGrim(args: openArray[string]): Process =
+  result = startProcess(
+    grimBin(), args = @args, options = {poUsePath, poStdErrToStdOut})
+  result.inputStream.close()
+
 proc runGrim*(args: openArray[string]) =
-  let code = startProcess(
-    command = grimBin(),
-    args = @args,
-    options = {poUsePath, poStdErrToStdOut}).waitForExit()
+  var p = startGrim(args)
+  let code = p.waitForExit()
   if code != 0:
     raise newException(ValueError, "grim failed (" & $code & "): grim " & args.join(" "))
 
 proc runGrimOut(args: openArray[string]): string =
-  execProcess(
-    grimBin(),
-    args = @args,
-    options = {poUsePath, poStdErrToStdOut}).strip()
+  var p = startGrim(args)
+  var outp = p.outputStream
+  result = ""
+  var line = newStringOfCap(120)
+  while true:
+    if outp.readLine(line):
+      result.add(line)
+      result.add("\n")
+    elif not p.running:
+      break
+  p.close()
+  result = result.strip()
 
 suite "integration":
   var gpgHome = ""
@@ -114,3 +125,46 @@ suite "integration":
     runGrim(@[
       "secret", "create", "t", "--vault", "discvault", "--value", "ok"])
     check runGrimOut(@["read", "grim://discvault/t"]) == "ok"
+
+  test "symmetric vault secret rotation":
+    let secrets = setupSecretsHome()
+    const symKey = "rotation-key-material"
+    writeTestExternalSecret(secrets, "rotkey", fpr, symKey)
+    runGrim(@[
+      "vault", "create", "symrot2", "--gpg-recipient", fpr, "--secret", "rotkey"])
+    runGrim(@[
+      "secret", "create", "x", "--vault", "symrot2", "--value", "plain"])
+    runGrim(@[
+      "vault", "rotate-secret", "newrotkey", "--vault", "symrot2"])
+    check runGrimOut(@["read", "grim://symrot2/x"]) == "plain"
+    putEnv("GNUPGHOME", gpgHome)
+    check runGpg(@["--batch", "--quiet", "--decrypt",
+      secrets / "rotkey.txt.gpg"]).strip() == symKey
+    check fileExists(secrets / "newrotkey.txt.gpg")
+
+  test "pubkey vault migrates to symmetric on rotate-secret":
+    let secrets = setupSecretsHome()
+    runGrim(@["vault", "create", "pubmigrate", "--gpg-recipient", fpr])
+    runGrim(@[
+      "secret", "create", "y", "--vault", "pubmigrate", "--value", "migrate-me"])
+    const newKey = "user-chosen-symmetric-key-material!!"
+    runGrim(@[
+      "vault", "rotate-secret", "migratekey", "--vault", "pubmigrate",
+      "--value", newKey])
+    check runGrimOut(@["read", "grim://pubmigrate/y"]) == "migrate-me"
+    let props = readFile(getEnv("GRIM_HOME") / "pubmigrate" / "vault.properties")
+    check "secret=migratekey" in props
+    putEnv("GNUPGHOME", gpgHome)
+    check runGpg(@["--batch", "--quiet", "--decrypt",
+      secrets / "migratekey.txt.gpg"]).strip() == newKey
+
+  test "rotate-secret rejects existing secret id":
+    let secrets = setupSecretsHome()
+    writeTestExternalSecret(secrets, "taken", fpr, "already-there")
+    runGrim(@["vault", "create", "v", "--gpg-recipient", fpr])
+    var failed = false
+    try:
+      runGrim(@["vault", "rotate-secret", "taken", "--vault", "v"])
+    except ValueError:
+      failed = true
+    check failed

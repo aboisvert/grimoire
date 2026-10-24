@@ -241,6 +241,30 @@ proc reencryptVaultItems*(vaultId, newRecipient: string) =
       field["value_enc"] = %encryptToRecipient(newRecipient, plain)
     writeItemDoc(vaultId, doc)
 
+proc reencryptVaultItemsForNewSymmetricKey*(
+    vaultId, oldSecretId, newPlainPassphrase: string) =
+  let oldSymmetric = oldSecretId.len > 0
+  let oldPass =
+    if oldSymmetric: readExternalSecretPlain(oldSecretId) else: ""
+  for iid in listItemIds(vaultId):
+    var doc = readItemDoc(vaultId, iid)
+    if not doc.hasKey("fields") or doc["fields"].kind != JArray:
+      continue
+    var touched = false
+    for field in doc["fields"]:
+      if field.kind != JObject or not isConcealedField(field):
+        continue
+      if not field.hasKey("value_enc"):
+        continue
+      let enc = field["value_enc"].getStr()
+      let plain =
+        if oldSymmetric: decryptSymmetric(oldPass, enc)
+        else: decryptArmor(enc)
+      field["value_enc"] = %encryptSymmetric(newPlainPassphrase, plain)
+      touched = true
+    if touched:
+      writeItemDoc(vaultId, doc)
+
 proc deleteItem*(vaultId, itemId: string) =
   let path = itemFilePath(vaultId, itemId)
   if not fileExists(path):

@@ -1,7 +1,12 @@
 ## External symmetric keys under SECRETS_HOME / discovered `.secrets`.
 
 import std/[os, tables]
+when not defined(posix):
+  import std/sysrand
+import checksums/sha2
 import grimoire/[store, gpg]
+
+const SymmetricSecretRandomBytes = 1024
 
 var vaultPassphraseCache = initTable[string, string]()
 
@@ -30,6 +35,28 @@ proc secretsHome*(): string =
 proc externalSecretGpgPath*(secretId: string): string =
   validateId(secretId)
   secretsHome() / (secretId & ".txt.gpg")
+
+proc externalSecretExists*(secretId: string): bool =
+  fileExists(externalSecretGpgPath(secretId))
+
+proc readRandomBytes*(n: int): string =
+  result = newString(n)
+  when defined(posix):
+    var f = open("/dev/random", fmRead)
+    defer: f.close()
+    let got = f.readBuffer(result[0].addr, n)
+    if got != n:
+      raise newException(GrimError, "could not read " & $n & " bytes from /dev/random")
+  else:
+    var buf = newSeq[byte](n)
+    fillRandom(buf)
+    copyMem(result[0].addr, buf[0].addr, n)
+
+proc generateSymmetricSecretPlain*(): string =
+  let raw = readRandomBytes(SymmetricSecretRandomBytes)
+  var h = initSha_256()
+  h.update(raw)
+  $h.digest()
 
 proc assertExternalSecretExists*(secretId: string) =
   let path = externalSecretGpgPath(secretId)

@@ -29,6 +29,7 @@ Layout: `config.properties`, `vaults/<id>/` (metadata, `items/*.json`, legacy se
 | `edit` | `--gpg-recipient`, `--secret`, `--description` (recipient change re-wraps external secret or re-encrypts items) |
 | `delete` | `--force` or TTY confirm |
 | `use` | Set default vault id |
+| `rotate-secret` | `<newSecretId> [--vault V]`; optional `--value` / `--stdin` (else auto-generate: SHA-256 hex of 1024 bytes from `/dev/random`). Writes `SECRETS_HOME/<newSecretId>.txt.gpg` encrypted to the vault `gpg.recipient`, re-encrypts all concealed item fields with the new symmetric key, updates vault `secret`. Pubkey-only vaults migrate to symmetric. Errors if the new secret file already exists; previous secret files are kept. |
 
 ### `grim item` (requires `--format json`)
 
@@ -36,7 +37,7 @@ Layout: `config.properties`, `vaults/<id>/` (metadata, `items/*.json`, legacy se
 |------------|--------|
 | `list` | `--vault`, `--account` |
 | `get` | `--vault` required; `--reveal` for values; `-` + stdin for batch |
-| `create` | `-` + JSON stdin; `--vault` required |
+| `create` | `-` + JSON stdin; `--vault` optional (default vault) |
 | `edit` | `ID --vault V` + JSON stdin |
 
 ### `grim secret`

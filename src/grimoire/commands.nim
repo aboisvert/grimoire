@@ -253,6 +253,68 @@ proc runVaultEdit(args: seq[string]) =
   meta.updated = utcNow()
   writeVaultMeta(meta)
 
+proc runVaultRotateSecret(args: seq[string]) =
+  var newSecretId = ""
+  var vaultFlag = ""
+  var valueFlag = false
+  var stdinFlag = false
+  var valueArg = ""
+  var i = 0
+  while i < args.len:
+    let arg = args[i]
+    if arg.startsWith("-"):
+      let (name, inline, hasInline) = splitFlag(arg)
+      case name
+      of "vault":
+        if hasInline:
+          vaultFlag = inline
+        else:
+          vaultFlag = readFlagValue(args, i, "--vault")
+      of "value":
+        valueFlag = true
+        if hasInline:
+          valueArg = inline
+        else:
+          valueArg = readFlagValue(args, i, "--value")
+      of "stdin":
+        stdinFlag = true
+      else:
+        failUsage("unknown option: " & arg)
+    elif newSecretId.len == 0:
+      newSecretId = arg
+    else:
+      failUsage("unexpected argument: " & arg)
+    inc i
+  if newSecretId.len == 0:
+    failUsage(
+      "usage: grim vault rotate-secret <newSecretId> [--vault <id>] " &
+      "[--value <text>|--stdin]")
+  validateId(newSecretId)
+  let vaultId = resolveVault(vaultFlag)
+  var meta = readVaultMeta(vaultId)
+  let oldSecretId = meta.secretId
+  if externalSecretExists(newSecretId):
+    raise newException(
+      GrimError,
+      "external secret already exists: " & externalSecretGpgPath(newSecretId))
+  let plainNew =
+    if valueFlag or stdinFlag:
+      readValueInput(valueFlag, stdinFlag, valueArg, confirm = false)
+    elif not stdin.isatty:
+      let piped = readAll(stdin).strip(leading = false)
+      if piped.len > 0:
+        piped
+      else:
+        generateSymmetricSecretPlain()
+    else:
+      generateSymmetricSecretPlain()
+  writeExternalSecretGpg(newSecretId, meta.gpgRecipient, plainNew)
+  reencryptVaultItemsForNewSymmetricKey(vaultId, oldSecretId, plainNew)
+  meta.secretId = newSecretId
+  meta.updated = utcNow()
+  writeVaultMeta(meta)
+  clearVaultPassphraseCache()
+
 proc runVaultDelete(args: seq[string]) =
   var id = ""
   var force = false
@@ -654,6 +716,7 @@ proc dispatchVault*(sub: string, args: seq[string]) =
   of "edit": runVaultEdit(args)
   of "delete": runVaultDelete(args)
   of "use": runVaultUse(args)
+  of "rotate-secret": runVaultRotateSecret(args)
   else: failUsage("unknown vault subcommand: " & sub)
 
 proc dispatchSecret*(sub: string, args: seq[string]) =
@@ -677,7 +740,8 @@ proc runGrim*(args: seq[string]) =
   case args[0]
   of "vault":
     if args.len < 2:
-      failUsage("usage: grim vault <list|get|create|edit|delete|use> ...")
+      failUsage(
+        "usage: grim vault <list|get|create|edit|delete|use|rotate-secret> ...")
     dispatchVault(args[1], args[2 ..^ 1])
   of "item":
     if args.len < 2:

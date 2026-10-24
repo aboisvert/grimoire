@@ -299,10 +299,12 @@ proc runItemCreate(args: seq[string]) =
     else:
       failUsage("unexpected argument: " & arg)
     inc i
-  if vaultFlag.len == 0:
-    failUsage("item create requires --vault")
   let ctx = resolveAuth(account)
-  let vid = resolveVaultByRef(vaultFlag)
+  let vid =
+    if vaultFlag.len > 0:
+      resolveVaultByRef(vaultFlag)
+    else:
+      resolveVault("")
   if not vaultAllowed(ctx, vid, needWrite = true):
     raise newException(GrimError, "write access denied for vault: " & vid)
   let itemTpl = parseJson(readAll(stdin))
