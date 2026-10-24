@@ -1,6 +1,6 @@
 ## Invoke the system gpg binary for encrypt/decrypt and key lookup.
 
-import std/[os, strutils, osproc, streams]
+import std/[os, strutils, osproc, streams, tables]
 import grimoire/store
 
 type
@@ -58,6 +58,35 @@ proc encryptToRecipient*(recipient, plaintext: string): string =
 
 proc decryptArmor*(armor: string): string =
   runGpg(@["--batch", "--quiet", "--decrypt"], armor).strip()
+
+proc defaultRecipientHint*(): string =
+  let fromEnv = getEnv("GRIM_GPG_RECIPIENT")
+  if fromEnv.len > 0:
+    return fromEnv
+  let cfg = readConfig()
+  if cfg.hasKey("gpg.recipient"):
+    return cfg["gpg.recipient"]
+  ""
+
+proc resolveDefaultRecipient*(): string =
+  let hint = defaultRecipientHint()
+  if hint.len > 0:
+    return resolveRecipient(hint)
+  let colonList = runGpg(@["--batch", "--with-colons", "--list-secret-keys"])
+  var pubCount = 0
+  var firstFpr = ""
+  for line in colonList.splitLines():
+    if line.startsWith("sec:"):
+      inc pubCount
+    elif line.startsWith("fpr:") and firstFpr.len == 0:
+      let parts = line.split(':')
+      if parts.len >= 10 and parts[9].len > 0:
+        firstFpr = parts[9]
+  if pubCount == 1 and firstFpr.len > 0:
+    return firstFpr
+  raise newException(
+    GpgError,
+    "no GPG recipient; set --gpg-recipient, GRIM_GPG_RECIPIENT, or gpg.recipient in config")
 
 proc reencryptVaultSecrets*(
     vaultId, oldRecipient, newRecipient: string) =

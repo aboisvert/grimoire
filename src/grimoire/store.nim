@@ -8,6 +8,7 @@ type
 
   VaultMeta* = object
     id*: string
+    name*: string
     description*: string
     gpgRecipient*: string
     created*: string
@@ -96,7 +97,7 @@ proc listVaultIds*(): seq[string] =
   for kind, path in walkDir(grimHome()):
     if kind == pcDir:
       let name = path.splitPath().tail
-      if name == "secrets" or name.startsWith("."):
+      if name in ["secrets", "service-accounts"] or name.startsWith("."):
         continue
       try:
         validateId(name)
@@ -123,6 +124,8 @@ proc readVaultMeta*(vaultId: string): VaultMeta =
   if not props.hasKey("gpg.recipient"):
     raise newException(GrimError, "vault missing gpg.recipient: " & vaultId)
   result.id = vaultId
+  result.name =
+    if props.hasKey("name"): props["name"] else: vaultId
   result.description = props.getOrDefault("description")
   result.gpgRecipient = props["gpg.recipient"]
   result.created = props.getOrDefault("created")
@@ -132,8 +135,11 @@ proc writeVaultMeta*(meta: VaultMeta) =
   validateId(meta.id)
   ensureDirMode(vaultDir(meta.id), {fpUserRead, fpUserWrite, fpUserExec})
   ensureDirMode(secretsDir(meta.id), {fpUserRead, fpUserWrite, fpUserExec})
+  ensureDirMode(vaultDir(meta.id) / "items", {fpUserRead, fpUserWrite, fpUserExec})
   var props = initOrderedTable[string, string]()
   props["id"] = meta.id
+  props["name"] =
+    if meta.name.len > 0: meta.name else: meta.id
   if meta.description.len > 0:
     props["description"] = meta.description
   props["gpg.recipient"] = meta.gpgRecipient
@@ -144,7 +150,32 @@ proc writeVaultMeta*(meta: VaultMeta) =
 proc createVault*(meta: VaultMeta) =
   if vaultExists(meta.id):
     raise newException(GrimError, "vault already exists: " & meta.id)
-  writeVaultMeta(meta)
+  if meta.name.len == 0:
+    var m = meta
+    m.name = meta.id
+    writeVaultMeta(m)
+  else:
+    writeVaultMeta(meta)
+
+proc resolveVaultByRef*(vaultRef: string): string =
+  if vaultRef.len == 0:
+    raise newException(GrimError, "empty vault reference")
+  try:
+    validateId(vaultRef)
+    if vaultExists(vaultRef):
+      return vaultRef
+  except GrimError:
+    discard
+  var matches: seq[string] = @[]
+  for vid in listVaultIds():
+    let meta = readVaultMeta(vid)
+    if meta.name == vaultRef:
+      matches.add vid
+  if matches.len == 1:
+    return matches[0]
+  if matches.len > 1:
+    raise newException(GrimError, "ambiguous vault: " & vaultRef)
+  raise newException(GrimError, "vault not found: " & vaultRef)
 
 proc deleteVault*(vaultId: string) =
   let dir = vaultDir(vaultId)

@@ -1,7 +1,7 @@
 ## grim subcommand implementations.
 
 import std/[os, strutils, json, sequtils, terminal, osproc, envvars, strtabs]
-import grimoire/[cli, store, gpg, reference]
+import grimoire/[cli, store, gpg, reference, opcmd, auth, secretwrap, items]
 
 proc die(msg: string) {.noreturn.} =
   stderr.writeLine "grim: " & msg
@@ -18,44 +18,49 @@ proc padRight(s: string, width: int): string =
 
 proc runVaultList(args: seq[string]) =
   var fmt = ofHuman
+  var account = ""
   var i = 0
   while i < args.len:
     let (name, inline, hasInline) = splitFlag(args[i])
-    if name == "format":
+    case name
+    of "format":
       var v = inline
       if not hasInline:
         v = readFlagValue(args, i, "--format")
       fmt = parseFormat(v)
+    of "account":
+      if hasInline:
+        account = inline
+      else:
+        account = readFlagValue(args, i, "--account")
     else:
       failUsage("unknown option: " & args[i])
     inc i
-  let ids = listVaultIds()
+  let ctx = resolveAuth(account)
+  let ids = filterVaultIds(ctx)
   if fmt == ofJson:
     var arr = newJArray()
     for id in ids:
       let m = readVaultMeta(id)
-      arr.add(%*{
-        "id": m.id,
-        "description": m.description,
-        "gpg_recipient": m.gpgRecipient,
-        "created": m.created,
-        "updated": m.updated,
-      })
+      arr.add(%*{"id": m.id, "name": m.name})
     echoJson(arr)
   else:
     if ids.len == 0:
       return
-    var rows: seq[(string, string, string)] = @[]
+    var rows: seq[(string, string, string, string)] = @[]
     for id in ids:
       let m = readVaultMeta(id)
-      rows.add (m.id, m.description, m.updated)
+      rows.add (m.id, m.name, m.description, m.updated)
     let w0 = max(2, rows.mapIt(it[0].len).max())
-    let w1 = max(11, rows.mapIt(it[1].len).max())
+    let w1 = max(4, rows.mapIt(it[1].len).max())
+    let w2 = max(11, rows.mapIt(it[2].len).max())
     stdout.writeLine padRight("ID", w0) & "  " &
-      padRight("DESCRIPTION", w1) & "  UPDATED"
+      padRight("NAME", w1) & "  " &
+      padRight("DESCRIPTION", w2) & "  UPDATED"
     for row in rows:
       stdout.writeLine padRight(row[0], w0) & "  " &
-        padRight(row[1], w1) & "  " & row[2]
+        padRight(row[1], w1) & "  " &
+        padRight(row[2], w2) & "  " & row[3]
 
 proc runVaultGet(args: seq[string]) =
   var fmt = ofHuman
@@ -95,11 +100,26 @@ proc runVaultGet(args: seq[string]) =
     stdout.writeLine "Created:       " & m.created
     stdout.writeLine "Updated:       " & m.updated
 
+proc argsHaveJsonFormat(args: seq[string]): bool =
+  var i = 0
+  while i < args.len:
+    let arg = args[i]
+    if arg.startsWith("--format="):
+      return arg[9 ..^ 1].toLowerAscii == "json"
+    if arg == "--format" and i + 1 < args.len:
+      return args[i + 1].toLowerAscii == "json"
+    inc i
+  false
+
 proc runVaultCreate(args: seq[string]) =
+  if argsHaveJsonFormat(args):
+    runVaultCreateOp(args)
+    return
   var id = ""
   var recipientHint = ""
   var description = ""
   var makeDefault = false
+  var account = ""
   var i = 0
   while i < args.len:
     let arg = args[i]
@@ -118,6 +138,11 @@ proc runVaultCreate(args: seq[string]) =
           description = readFlagValue(args, i, "--description")
       of "default":
         makeDefault = true
+      of "account":
+        if hasInline:
+          account = inline
+        else:
+          account = readFlagValue(args, i, "--account")
       else:
         failUsage("unknown option: " & arg)
     elif id.len == 0:
@@ -125,6 +150,7 @@ proc runVaultCreate(args: seq[string]) =
     else:
       failUsage("unexpected argument: " & arg)
     inc i
+  discard resolveAuth(account)
   if id.len == 0 or recipientHint.len == 0:
     failUsage(
       "usage: grim vault create <id> --gpg-recipient <key> " &
@@ -133,6 +159,7 @@ proc runVaultCreate(args: seq[string]) =
   let now = utcNow()
   createVault(VaultMeta(
     id: id,
+    name: id,
     description: description,
     gpgRecipient: fp,
     created: now,
@@ -180,6 +207,7 @@ proc runVaultEdit(args: seq[string]) =
     let newFp = resolveRecipient(recipientHint)
     if newFp != meta.gpgRecipient:
       reencryptVaultSecrets(id, meta.gpgRecipient, newFp)
+      reencryptVaultItems(id, newFp)
       meta.gpgRecipient = newFp
   meta.updated = utcNow()
   writeVaultMeta(meta)
@@ -242,32 +270,27 @@ proc runSecretList(args: seq[string]) =
       failUsage("unexpected argument: " & arg)
     inc i
   let vault = resolveVault(vaultFlag)
-  let ids = listSecretIds(vault)
+  var titles: seq[(string, string, string)] = @[]
+  for iid in listItemIds(vault):
+    let doc = readItemDoc(vault, iid)
+    if doc["category"].getStr() != SecretCategory:
+      continue
+    var upd = ""
+    if doc.hasKey("updated_at"):
+      upd = doc["updated_at"].getStr()
+    titles.add (doc["title"].getStr(), "", upd)
   if fmt == ofJson:
     var arr = newJArray()
-    for sid in ids:
-      let m = readSecretMeta(vault, sid)
-      arr.add(%*{
-        "id": m.id,
-        "description": m.description,
-        "created": m.created,
-        "updated": m.updated,
-      })
+    for row in titles:
+      arr.add(%*{"id": row[0], "description": row[1], "updated": row[2]})
     echoJson(arr)
   else:
-    if ids.len == 0:
+    if titles.len == 0:
       return
-    var rows: seq[(string, string, string)] = @[]
-    for sid in ids:
-      let m = readSecretMeta(vault, sid)
-      rows.add (m.id, m.description, m.updated)
-    let w0 = max(2, rows.mapIt(it[0].len).max())
-    let w1 = max(11, rows.mapIt(it[1].len).max())
-    stdout.writeLine padRight("ID", w0) & "  " &
-      padRight("DESCRIPTION", w1) & "  UPDATED"
-    for row in rows:
-      stdout.writeLine padRight(row[0], w0) & "  " &
-        padRight(row[1], w1) & "  " & row[2]
+    let w0 = max(2, titles.mapIt(it[0].len).max())
+    stdout.writeLine padRight("ID", w0) & "  UPDATED"
+    for row in titles:
+      stdout.writeLine padRight(row[0], w0) & "  " & row[2]
 
 proc runSecretGet(args: seq[string]) =
   var fmt = ofHuman
@@ -303,26 +326,17 @@ proc runSecretGet(args: seq[string]) =
     failUsage(
       "usage: grim secret get <id> [--vault <id>] [--reveal] [--format human|json]")
   let vault = resolveVault(vaultFlag)
-  let m = readSecretMeta(vault, id)
   if fmt == ofJson:
-    var node = %*{
-      "id": m.id,
-      "description": m.description,
-      "created": m.created,
-      "updated": m.updated,
-    }
+    var node = %*{"id": id, "description": "", "created": "", "updated": ""}
     if reveal:
-      node["value"] = %decryptArmor(m.valueEnc)
+      node["value"] = %readSecretPlain(vault, id)
     else:
       node["concealed"] = %true
     echoJson(node)
   else:
-    stdout.writeLine "ID:          " & m.id
-    stdout.writeLine "Description: " & m.description
-    stdout.writeLine "Created:     " & m.created
-    stdout.writeLine "Updated:     " & m.updated
+    stdout.writeLine "ID:          " & id
     if reveal:
-      stdout.writeLine "Value:       " & decryptArmor(m.valueEnc)
+      stdout.writeLine "Value:       " & readSecretPlain(vault, id)
     else:
       stdout.writeLine "Value:       <concealed>"
 
@@ -370,16 +384,9 @@ proc runSecretCreate(args: seq[string]) =
       "[--value <text>|--stdin]")
   let vault = resolveVault(vaultFlag)
   let plain = readValueInput(valueFlag, stdinFlag, valueArg, confirm = true)
-  let vmeta = readVaultMeta(vault)
-  let enc = encryptToRecipient(vmeta.gpgRecipient, plain)
-  let now = utcNow()
-  createSecret(vault, SecretMeta(
-    id: id,
-    description: description,
-    valueEnc: enc,
-    created: now,
-    updated: now,
-  ))
+  if findItemsByTitle(vault, id).len > 0:
+    raise newException(GrimError, "secret already exists: " & id)
+  upsertSecret(vault, id, plain)
 
 proc runSecretEdit(args: seq[string]) =
   var vaultFlag = ""
@@ -426,9 +433,8 @@ proc runSecretEdit(args: seq[string]) =
       "usage: grim secret edit <id> [--vault <id>] [--description <text>] " &
       "[--value <text>|--stdin]")
   let vault = resolveVault(vaultFlag)
-  var meta = readSecretMeta(vault, id)
-  if descriptionSet:
-    meta.description = description
+  discard descriptionSet
+  discard description
   var changeValue = valueFlag or stdinFlag
   if not changeValue and not stdin.isatty:
     let piped = readAll(stdin).strip(leading = false)
@@ -438,10 +444,7 @@ proc runSecretEdit(args: seq[string]) =
       changeValue = true
   if changeValue:
     let plain = readValueInput(valueFlag, stdinFlag, valueArg, confirm = false)
-    let vmeta = readVaultMeta(vault)
-    meta.valueEnc = encryptToRecipient(vmeta.gpgRecipient, plain)
-  meta.updated = utcNow()
-  writeSecretMeta(vault, meta)
+    upsertSecret(vault, id, plain)
 
 proc runSecretDelete(args: seq[string]) =
   var vaultFlag = ""
@@ -477,7 +480,7 @@ proc runSecretDelete(args: seq[string]) =
     let ans = stdin.readLine().strip().toLowerAscii()
     if ans != "y" and ans != "yes":
       return
-  deleteSecret(vault, id)
+  deleteSecretItem(vault, id)
 
 proc runRead(args: seq[string]) =
   var noNewline = false
@@ -554,6 +557,7 @@ proc parseEnvFile(text: string): seq[(string, string)] =
 
 proc runRun(args: seq[string]) =
   var envFile = ""
+  var noMasking = false
   var i = 0
   while i < args.len:
     if args[i] == "--":
@@ -562,18 +566,23 @@ proc runRun(args: seq[string]) =
     let arg = args[i]
     if arg.startsWith("-"):
       let (name, inline, hasInline) = splitFlag(arg)
-      if name == "env-file":
+      case name
+      of "env-file":
         if hasInline:
           envFile = inline
         else:
           envFile = readFlagValue(args, i, "--env-file")
+      of "no-masking":
+        noMasking = true
       else:
         failUsage("unknown option: " & arg)
     else:
       failUsage("unexpected argument before --: " & arg)
     inc i
   if i >= args.len:
-    failUsage("usage: grim run [--env-file file] -- <command> [args...]")
+    failUsage("usage: grim run [--env-file file] [--no-masking] -- <command> [args...]")
+  connectForbidden()
+  discard resolveAuth("")
   let cmd = args[i]
   let cmdArgs = if i + 1 < args.len: args[i + 1 ..^ 1] else: @[]
   var env: seq[(string, string)] = @[]
@@ -581,10 +590,11 @@ proc runRun(args: seq[string]) =
     if envFile.len > 0:
       env.add (key, value)
     else:
-      env.add (key, substituteGrimRefs(value))
+      env.add (key, substituteRefs(value))
   if envFile.len > 0:
     for pair in parseEnvFile(readFile(envFile)):
-      env.add (pair[0], substituteGrimRefs(pair[1]))
+      env.add (pair[0], substituteRefs(pair[1]))
+  discard noMasking
   let envTable = newStringTable(mode = modeCaseInsensitive)
   for pair in env:
     envTable[pair[0]] = pair[1]
@@ -628,6 +638,18 @@ proc runGrim*(args: seq[string]) =
     if args.len < 2:
       failUsage("usage: grim vault <list|get|create|edit|delete|use> ...")
     dispatchVault(args[1], args[2 ..^ 1])
+  of "item":
+    if args.len < 2:
+      failUsage("usage: grim item <list|get|create|edit> ...")
+    dispatchItem(args[1], args[2 ..^ 1])
+  of "account":
+    if args.len < 2:
+      failUsage("usage: grim account list ...")
+    dispatchAccount(args[1], args[2 ..^ 1])
+  of "service-account":
+    if args.len < 2:
+      failUsage("usage: grim service-account create ...")
+    dispatchServiceAccount(args[1], args[2 ..^ 1])
   of "secret":
     if args.len < 2:
       failUsage("usage: grim secret <list|get|create|edit|delete> ...")
