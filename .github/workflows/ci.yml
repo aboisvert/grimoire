@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: nimlang/nim:2.2.12
+    steps:
+      - name: Install GPG
+        run: apt-get update && apt-get install -y gnupg
+
+      # Only grimoire.nimble is needed to resolve and cache Nimble deps.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: grimoire.nimble
+          sparse-checkout-cone-mode: false
+
+      - name: Cache Nimble packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ hashFiles('grimoire.nimble') }}
+          restore-keys: |
+            nimble-
+
+      - name: Install dependencies
+        run: nimble install -y --depsOnly
+
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: nimble test
