@@ -1,6 +1,6 @@
 ## Shared CLI helpers and usage errors.
 
-import std/[strutils, terminal, osproc, os] # osproc: stty for hidden prompts
+import std/[strutils, terminal, os]
 
 type
   UsageError* = object of CatchableError

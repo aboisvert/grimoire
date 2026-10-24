@@ -1,6 +1,6 @@
 ## op-shaped items stored as JSON under each vault.
 
-import std/[json, os, strutils, sequtils, random, uri, times]
+import std/[json, os, strutils, random, uri, times]
 import grimoire/[store, gpg]
 
 const OpItemIdLen* = 26

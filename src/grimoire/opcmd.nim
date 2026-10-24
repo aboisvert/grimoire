@@ -1,6 +1,6 @@
 ## op-compatible command handlers (item, account, service-account, vault json).
 
-import std/[os, strutils, json, sequtils, times, re]
+import std/[os, strutils, json, times, re]
 import grimoire/[cli, store, gpg, items, auth]
 
 proc echoJson(node: JsonNode) =

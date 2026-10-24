@@ -1,7 +1,7 @@
 ## grim secret commands as single-field items.
 
-import std/[json, strutils]
-import grimoire/[store, items, gpg]
+import std/json
+import grimoire/items
 
 const SecretCategory* = "PASSWORD"
 const SecretFieldId* = "value"

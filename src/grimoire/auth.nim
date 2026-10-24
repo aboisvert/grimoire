@@ -1,6 +1,7 @@
 ## Local account and service-account token grants.
 
-import std/[json, os, strutils, times, sequtils, parseutils, random, sha1, tables]
+import std/[json, os, strutils, times, parseutils, random, tables]
+import checksums/sha1
 import grimoire/store
 
 proc randomLowerAlnum(n: int): string =

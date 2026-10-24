@@ -8,6 +8,7 @@ srcDir        = "src"
 bin           = @["grim"]
 
 requires "nim >= 2.2.12"
+requires "checksums >= 0.2.0"
 
 task test, "Run tests":
   exec "nim c --path:src -o:grim src/grim.nim"
