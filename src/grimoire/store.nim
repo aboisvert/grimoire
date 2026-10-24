@@ -1,4 +1,4 @@
-## On-disk layout under GRIM_HOME / ~/.grimoire.
+## On-disk layout: GRIM_HOME override, nearest ancestor `.grimoire`, or ~/.grimoire.
 
 import std/[os, strutils, times, tables]
 import grimoire/properties
@@ -27,12 +27,27 @@ proc isIdChar(c: char): bool =
 proc utcNow*(): string =
   format(now().utc(), "yyyy-MM-dd'T'HH:mm:ss'Z'")
 
+proc discoverGrimHome*(startDir: string): string =
+  var dir = absolutePath(startDir)
+  while dir.len > 0:
+    let (_, tail) = splitPath(dir)
+    if tail == ".grimoire" and dirExists(dir):
+      return dir
+    let nested = dir / ".grimoire"
+    if dirExists(nested):
+      return nested
+    let parent = dir.parentDir()
+    if parent == dir or parent.len == 0:
+      break
+    dir = parent
+  getHomeDir() / ".grimoire"
+
 proc grimHome*(): string =
   let fromEnv = getEnv("GRIM_HOME")
   if fromEnv.len > 0:
     result = fromEnv
   else:
-    result = getHomeDir() / ".grimoire"
+    result = discoverGrimHome(getCurrentDir())
 
 proc validateId*(id: string) =
   if id.len == 0 or id.len > 128 or id == ".." or

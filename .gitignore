@@ -1,6 +1,7 @@
 grim
 nimcache/
 *.out
+.cursor/
 
 # Extensionless files (compiled binaries) under src/ and tests/
 /src/**

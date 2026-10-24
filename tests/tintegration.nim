@@ -1,4 +1,4 @@
-import std/[unittest, osproc, strutils, os]
+import std/[unittest, osproc, strutils, os, times, envvars]
 import support
 
 proc runGrim*(args: openArray[string]) =
@@ -58,3 +58,15 @@ suite "integration":
       "vault", "edit", "rot", "--gpg-recipient", fpr2])
     check runGrimOut(@[
       "read", "grim://rot/x"]) == "plain"
+
+  test "local .grimoire discovered from cwd without GRIM_HOME":
+    let savedCwd = getCurrentDir()
+    defer: setCurrentDir(savedCwd)
+    delEnv("GRIM_HOME")
+    let project = getTempDir() / ("grim-proj-" & $getTime().toUnix())
+    defer: removeDir(project)
+    createDir(project / ".grimoire")
+    createDir(project / "work")
+    setCurrentDir(project / "work")
+    runGrim(@["vault", "create", "localvault", "--gpg-recipient", fpr])
+    check fileExists(project / ".grimoire" / "localvault" / "vault.properties")
