@@ -5,6 +5,7 @@
 | Variable | Purpose |
 |----------|---------|
 | `GRIM_HOME` | Data directory (default `~/.grimoire`) |
+| `SECRETS_HOME` | External symmetric key files (default: walk CWD for `.secrets`, else `~/.secrets`) |
 | `OP_SERVICE_ACCOUNT_TOKEN` | Scoped API access (`ops_...` token) |
 | `OP_CONNECT_HOST` / `OP_CONNECT_TOKEN` | **Blocked** — grim exits with error |
 
@@ -24,8 +25,8 @@ Layout: `config.properties`, `vaults/<id>/` (metadata, `items/*.json`, legacy se
 |------------|--------|
 | `list` | `--format human\|json`; `--account` for service token |
 | `get` | Human or JSON metadata |
-| `create` | Human: `<id> --gpg-recipient KEY`; op: `NAME --format json` (GPG from `--gpg-recipient` or default) |
-| `edit` | `--gpg-recipient`, `--description` (re-encrypts on recipient change) |
+| `create` | Human: `<id> --gpg-recipient KEY`; optional `--secret ID` (`SECRETS_HOME/ID.txt.gpg`); op: `NAME --format json` |
+| `edit` | `--gpg-recipient`, `--secret`, `--description` (recipient change re-wraps external secret or re-encrypts items) |
 | `delete` | `--force` or TTY confirm |
 | `use` | Set default vault id |
 
@@ -79,4 +80,4 @@ Vault and secret ids: 1–128 chars, alphanumeric start, `[a-zA-Z0-9._-]`. Item 
 
 ## GPG
 
-Vaults encrypt concealed item fields and secret values to `--gpg-recipient` (fingerprint). Changing recipient re-encrypts vault contents.
+Vaults encrypt concealed item fields to `--gpg-recipient` (fingerprint), or with `--secret` to a GPG-symmetric key loaded from `SECRETS_HOME/<id>.txt.gpg` (that file is pubkey-encrypted to `gpg.recipient`). Changing recipient re-encrypts items or re-wraps the external secret file.

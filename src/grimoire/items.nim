@@ -1,7 +1,7 @@
 ## op-shaped items stored as JSON under each vault.
 
 import std/[json, os, strutils, random, uri, times]
-import grimoire/[store, gpg]
+import grimoire/[store, gpg, secretshome]
 
 const OpItemIdLen* = 26
 
@@ -66,8 +66,20 @@ proc isConcealedField(field: JsonNode): bool =
   let purpose = if field.hasKey("purpose"): field["purpose"].getStr() else: ""
   ftype == "CONCEALED" or purpose == "PASSWORD"
 
+proc encryptFieldValue(vaultId: string, meta: VaultMeta, plain: string): string =
+  if meta.secretId.len > 0:
+    encryptSymmetric(vaultSymmetricPassphrase(vaultId), plain)
+  else:
+    encryptToRecipient(meta.gpgRecipient, plain)
+
+proc decryptFieldValue(vaultId: string, meta: VaultMeta, enc: string): string =
+  if meta.secretId.len > 0:
+    decryptSymmetric(vaultSymmetricPassphrase(vaultId), enc)
+  else:
+    decryptArmor(enc)
+
 proc encryptFieldValues*(vaultId: string, fields: JsonNode) =
-  let recipient = readVaultMeta(vaultId).gpgRecipient
+  let meta = readVaultMeta(vaultId)
   if fields.kind != JArray:
     return
   for field in fields:
@@ -77,12 +89,13 @@ proc encryptFieldValues*(vaultId: string, fields: JsonNode) =
       continue
     if field.hasKey("value") and field["value"].kind != JNull:
       let plain = field["value"].getStr()
-      field["value_enc"] = %encryptToRecipient(recipient, plain)
+      field["value_enc"] = %encryptFieldValue(vaultId, meta, plain)
       field.delete("value")
     elif field.hasKey("value_enc"):
       discard
 
 proc decryptFieldValues*(vaultId: string, fields: JsonNode) =
+  let meta = readVaultMeta(vaultId)
   if fields.kind != JArray:
     return
   for field in fields:
@@ -91,7 +104,8 @@ proc decryptFieldValues*(vaultId: string, fields: JsonNode) =
     if not isConcealedField(field):
       continue
     if field.hasKey("value_enc"):
-      field["value"] = %decryptArmor(field["value_enc"].getStr())
+      let enc = field["value_enc"].getStr()
+      field["value"] = %decryptFieldValue(vaultId, meta, enc)
       field.delete("value_enc")
 
 proc encodeRefPart(s: string): string =
@@ -205,13 +219,17 @@ proc fieldPlaintext*(vaultId, itemId, fieldId: string): string =
     if fid != fieldId and label != fieldId:
       continue
     if field.hasKey("value_enc"):
-      return decryptArmor(field["value_enc"].getStr())
+      let meta = readVaultMeta(vaultId)
+      return decryptFieldValue(vaultId, meta, field["value_enc"].getStr())
     if field.hasKey("value"):
       return field["value"].getStr()
     raise newException(GrimError, "field has no value: " & fieldId)
   raise newException(GrimError, "field not found: " & fieldId)
 
 proc reencryptVaultItems*(vaultId, newRecipient: string) =
+  let meta = readVaultMeta(vaultId)
+  if meta.secretId.len > 0:
+    return
   for iid in listItemIds(vaultId):
     var doc = readItemDoc(vaultId, iid)
     if not doc.hasKey("fields") or doc["fields"].kind != JArray:

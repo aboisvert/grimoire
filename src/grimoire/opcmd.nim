@@ -1,7 +1,7 @@
 ## op-compatible command handlers (item, account, service-account, vault json).
 
 import std/[os, strutils, json, times, re]
-import grimoire/[cli, store, gpg, items, auth]
+import grimoire/[cli, store, gpg, items, auth, secretshome]
 
 proc echoJson(node: JsonNode) =
   stdout.writeLine $node
@@ -99,6 +99,7 @@ proc runVaultCreateOp*(args: seq[string]) =
   var fmt = "json"
   var account = ""
   var recipientHint = ""
+  var secretHint = ""
   var i = 0
   while i < args.len:
     let arg = args[i]
@@ -120,6 +121,11 @@ proc runVaultCreateOp*(args: seq[string]) =
           recipientHint = inline
         else:
           recipientHint = readFlagValue(args, i, "--gpg-recipient")
+      of "secret":
+        if hasInline:
+          secretHint = inline
+        else:
+          secretHint = readFlagValue(args, i, "--secret")
       else:
         failUsage("unknown option: " & arg)
     elif name.len == 0:
@@ -136,11 +142,15 @@ proc runVaultCreateOp*(args: seq[string]) =
       resolveRecipient(recipientHint)
     else:
       resolveDefaultRecipient()
+  if secretHint.len > 0:
+    validateId(secretHint)
+    assertExternalSecretExists(secretHint)
   let now = utcNow()
   createVault(VaultMeta(
     id: name,
     name: name,
     gpgRecipient: fp,
+    secretId: secretHint,
     created: now,
     updated: now,
   ))

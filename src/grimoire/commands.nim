@@ -1,7 +1,7 @@
 ## grim subcommand implementations.
 
 import std/[os, strutils, json, sequtils, terminal, osproc, envvars, strtabs]
-import grimoire/[cli, store, gpg, reference, opcmd, auth, secretwrap, items]
+import grimoire/[cli, store, gpg, reference, opcmd, auth, secretwrap, items, secretshome]
 
 proc die(msg: string) {.noreturn.} =
   stderr.writeLine "grim: " & msg
@@ -86,17 +86,22 @@ proc runVaultGet(args: seq[string]) =
     failUsage("usage: grim vault get <id> [--format human|json]")
   let m = readVaultMeta(id)
   if fmt == ofJson:
-    echoJson(%*{
+    var node = %*{
       "id": m.id,
       "description": m.description,
       "gpg_recipient": m.gpgRecipient,
       "created": m.created,
       "updated": m.updated,
-    })
+    }
+    if m.secretId.len > 0:
+      node["secret"] = %m.secretId
+    echoJson(node)
   else:
     stdout.writeLine "ID:            " & m.id
     stdout.writeLine "Description:   " & m.description
     stdout.writeLine "GPG recipient: " & m.gpgRecipient
+    if m.secretId.len > 0:
+      stdout.writeLine "Secret:        " & m.secretId
     stdout.writeLine "Created:       " & m.created
     stdout.writeLine "Updated:       " & m.updated
 
@@ -117,6 +122,7 @@ proc runVaultCreate(args: seq[string]) =
     return
   var id = ""
   var recipientHint = ""
+  var secretHint = ""
   var description = ""
   var makeDefault = false
   var account = ""
@@ -131,6 +137,11 @@ proc runVaultCreate(args: seq[string]) =
           recipientHint = inline
         else:
           recipientHint = readFlagValue(args, i, "--gpg-recipient")
+      of "secret":
+        if hasInline:
+          secretHint = inline
+        else:
+          secretHint = readFlagValue(args, i, "--secret")
       of "description":
         if hasInline:
           description = inline
@@ -154,14 +165,18 @@ proc runVaultCreate(args: seq[string]) =
   if id.len == 0 or recipientHint.len == 0:
     failUsage(
       "usage: grim vault create <id> --gpg-recipient <key> " &
-      "[--description <text>] [--default]")
+      "[--secret <id>] [--description <text>] [--default]")
   let fp = resolveRecipient(recipientHint)
+  if secretHint.len > 0:
+    validateId(secretHint)
+    assertExternalSecretExists(secretHint)
   let now = utcNow()
   createVault(VaultMeta(
     id: id,
     name: id,
     description: description,
     gpgRecipient: fp,
+    secretId: secretHint,
     created: now,
     updated: now,
   ))
@@ -171,6 +186,8 @@ proc runVaultCreate(args: seq[string]) =
 proc runVaultEdit(args: seq[string]) =
   var id = ""
   var recipientHint = ""
+  var secretSet = false
+  var secretHint = ""
   var descriptionSet = false
   var description = ""
   var i = 0
@@ -184,6 +201,12 @@ proc runVaultEdit(args: seq[string]) =
           recipientHint = inline
         else:
           recipientHint = readFlagValue(args, i, "--gpg-recipient")
+      of "secret":
+        secretSet = true
+        if hasInline:
+          secretHint = inline
+        else:
+          secretHint = readFlagValue(args, i, "--secret")
       of "description":
         descriptionSet = true
         if hasInline:
@@ -199,15 +222,33 @@ proc runVaultEdit(args: seq[string]) =
     inc i
   if id.len == 0:
     failUsage(
-      "usage: grim vault edit <id> [--gpg-recipient <key>] [--description <text>]")
+      "usage: grim vault edit <id> [--gpg-recipient <key>] [--secret <id>] " &
+      "[--description <text>]")
   var meta = readVaultMeta(id)
   if descriptionSet:
     meta.description = description
+  if secretSet:
+    if secretHint.len > 0:
+      validateId(secretHint)
+      assertExternalSecretExists(secretHint)
+      if secretHint != meta.secretId and listItemIds(id).len > 0:
+        raise newException(
+          GrimError,
+          "cannot change vault secret when items exist; re-encrypt items first")
+      meta.secretId = secretHint
+    else:
+      if meta.secretId.len > 0 and listItemIds(id).len > 0:
+        raise newException(
+          GrimError,
+          "cannot clear vault secret when items exist")
+      meta.secretId = ""
   if recipientHint.len > 0:
     let newFp = resolveRecipient(recipientHint)
     if newFp != meta.gpgRecipient:
-      reencryptVaultSecrets(id, meta.gpgRecipient, newFp)
-      reencryptVaultItems(id, newFp)
+      if meta.secretId.len > 0:
+        reencryptExternalSecretForVault(id, newFp)
+      else:
+        reencryptVaultItems(id, newFp)
       meta.gpgRecipient = newFp
   meta.updated = utcNow()
   writeVaultMeta(meta)

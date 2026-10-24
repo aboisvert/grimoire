@@ -11,13 +11,7 @@ type
     name*: string
     description*: string
     gpgRecipient*: string
-    created*: string
-    updated*: string
-
-  SecretMeta* = object
-    id*: string
-    description*: string
-    valueEnc*: string
+    secretId*: string
     created*: string
     updated*: string
 
@@ -100,13 +94,6 @@ proc vaultDir*(vaultId: string): string =
 proc vaultPropertiesPath*(vaultId: string): string =
   vaultDir(vaultId) / "vault.properties"
 
-proc secretsDir*(vaultId: string): string =
-  vaultDir(vaultId) / "secrets"
-
-proc secretPropertiesPath*(vaultId, secretId: string): string =
-  validateId(secretId)
-  secretsDir(vaultId) / (secretId & ".properties")
-
 proc listVaultIds*(): seq[string] =
   ensureGrimHome()
   for kind, path in walkDir(grimHome()):
@@ -143,13 +130,15 @@ proc readVaultMeta*(vaultId: string): VaultMeta =
     if props.hasKey("name"): props["name"] else: vaultId
   result.description = props.getOrDefault("description")
   result.gpgRecipient = props["gpg.recipient"]
+  if props.hasKey("secret"):
+    result.secretId = props["secret"]
+    validateId(result.secretId)
   result.created = props.getOrDefault("created")
   result.updated = props.getOrDefault("updated")
 
 proc writeVaultMeta*(meta: VaultMeta) =
   validateId(meta.id)
   ensureDirMode(vaultDir(meta.id), {fpUserRead, fpUserWrite, fpUserExec})
-  ensureDirMode(secretsDir(meta.id), {fpUserRead, fpUserWrite, fpUserExec})
   ensureDirMode(vaultDir(meta.id) / "items", {fpUserRead, fpUserWrite, fpUserExec})
   var props = initOrderedTable[string, string]()
   props["id"] = meta.id
@@ -158,6 +147,8 @@ proc writeVaultMeta*(meta: VaultMeta) =
   if meta.description.len > 0:
     props["description"] = meta.description
   props["gpg.recipient"] = meta.gpgRecipient
+  if meta.secretId.len > 0:
+    props["secret"] = meta.secretId
   props["created"] = meta.created
   props["updated"] = meta.updated
   writePropertiesFileAtomic(vaultPropertiesPath(meta.id), props)
@@ -201,61 +192,6 @@ proc deleteVault*(vaultId: string) =
   if cfg.getOrDefault("default.vault") == vaultId:
     cfg.del("default.vault")
     writeConfig(cfg)
-
-proc listSecretIds*(vaultId: string): seq[string] =
-  discard readVaultMeta(vaultId)
-  let sdir = secretsDir(vaultId)
-  if not dirExists(sdir):
-    return
-  for kind, path in walkDir(sdir):
-    if kind == pcFile and path.endsWith(".properties"):
-      let sid = splitFile(path).name
-      result.add sid
-
-proc readSecretMeta*(vaultId, secretId: string): SecretMeta =
-  validateId(secretId)
-  discard readVaultMeta(vaultId)
-  let path = secretPropertiesPath(vaultId, secretId)
-  if not fileExists(path):
-    raise newException(GrimError, "secret not found: " & secretId)
-  let props = readPropertiesFile(path)
-  if props.getOrDefault("id") != secretId:
-    raise newException(
-      GrimError,
-      "secret id mismatch: file " & props.getOrDefault("id") & " vs " & secretId)
-  if not props.hasKey("value"):
-    raise newException(GrimError, "secret missing value: " & secretId)
-  result.id = secretId
-  result.description = props.getOrDefault("description")
-  result.valueEnc = props["value"]
-  result.created = props.getOrDefault("created")
-  result.updated = props.getOrDefault("updated")
-
-proc writeSecretMeta*(vaultId: string, meta: SecretMeta) =
-  validateId(meta.id)
-  discard readVaultMeta(vaultId)
-  var props = initOrderedTable[string, string]()
-  props["id"] = meta.id
-  if meta.description.len > 0:
-    props["description"] = meta.description
-  props["value"] = meta.valueEnc
-  props["created"] = meta.created
-  props["updated"] = meta.updated
-  writePropertiesFileAtomic(secretPropertiesPath(vaultId, meta.id), props)
-  var vault = readVaultMeta(vaultId)
-  vault.updated = utcNow()
-  writeVaultMeta(vault)
-
-proc createSecret*(vaultId: string, meta: SecretMeta) =
-  if fileExists(secretPropertiesPath(vaultId, meta.id)):
-    raise newException(GrimError, "secret already exists: " & meta.id)
-  writeSecretMeta(vaultId, meta)
-
-proc deleteSecret*(vaultId, secretId: string) =
-  let path = secretPropertiesPath(vaultId, secretId)
-  if not fileExists(path):
-    raise newException(GrimError, "secret not found: " & secretId)
-  removeFile(path)
 
 proc resolveVault*(explicit: string): string =
   if explicit.len > 0:

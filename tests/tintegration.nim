@@ -70,3 +70,47 @@ suite "integration":
     setCurrentDir(project / "work")
     runGrim(@["vault", "create", "localvault", "--gpg-recipient", fpr])
     check fileExists(project / ".grimoire" / "localvault" / "vault.properties")
+
+  test "symmetric vault via external secret":
+    let secrets = setupSecretsHome()
+    const symKey = "symmetric-vault-key-material"
+    writeTestExternalSecret(secrets, "vaultkey", fpr, symKey)
+    runGrim(@[
+      "vault", "create", "symvault", "--gpg-recipient", fpr, "--secret", "vaultkey"])
+    runGrim(@[
+      "secret", "create", "db", "--vault", "symvault", "--value", "s3cret"])
+    check runGrimOut(@[
+      "read", "grim://symvault/db"]) == "s3cret"
+
+  test "symmetric vault recipient rotation re-wraps external secret":
+    let secrets = setupSecretsHome()
+    const symKey = "rotation-key-material"
+    writeTestExternalSecret(secrets, "rotkey", fpr, symKey)
+    runGrim(@[
+      "vault", "create", "symrot", "--gpg-recipient", fpr, "--secret", "rotkey"])
+    runGrim(@[
+      "secret", "create", "x", "--vault", "symrot", "--value", "plain"])
+    let fpr2 = addTestKey(gpgHome, "sym2@test.local")
+    runGrim(@["vault", "edit", "symrot", "--gpg-recipient", fpr2])
+    check runGrimOut(@["read", "grim://symrot/x"]) == "plain"
+    putEnv("GNUPGHOME", gpgHome)
+    check runGpg(@["--batch", "--quiet", "--decrypt",
+      secrets / "rotkey.txt.gpg"]).strip() == symKey
+
+  test "local .secrets discovered from cwd without SECRETS_HOME":
+    let savedCwd = getCurrentDir()
+    defer: setCurrentDir(savedCwd)
+    delEnv("SECRETS_HOME")
+    let project = getTempDir() / ("grim-secproj-" & $getTime().toUnix())
+    defer: removeDir(project)
+    createDir(project / ".secrets")
+    createDir(project / "work")
+    const symKey = "discovered-secret-key"
+    writeTestExternalSecret(project / ".secrets", "disckey", fpr, symKey)
+    discard setupGrimHome()
+    setCurrentDir(project / "work")
+    runGrim(@[
+      "vault", "create", "discvault", "--gpg-recipient", fpr, "--secret", "disckey"])
+    runGrim(@[
+      "secret", "create", "t", "--vault", "discvault", "--value", "ok"])
+    check runGrimOut(@["read", "grim://discvault/t"]) == "ok"

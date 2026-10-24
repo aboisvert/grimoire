@@ -11,7 +11,7 @@ proc gpgPath(): string =
     raise newException(ValueError, "gpg not found in PATH")
   exe
 
-proc runGpg(args: openArray[string]): string =
+proc runGpg*(args: openArray[string]): string =
   execProcess(
     gpgPath(),
     args = @args,
@@ -61,6 +61,25 @@ proc setupGrimHome*(): string =
   let home = makeTempDir("grim-home")
   putEnv("GRIM_HOME", home)
   home
+
+proc setupSecretsHome*(): string =
+  let home = makeTempDir("grim-secrets")
+  putEnv("SECRETS_HOME", home)
+  home
+
+proc writeTestExternalSecret*(
+    secretsHome, secretId, recipient, plaintext: string) =
+  createDir(secretsHome)
+  let path = secretsHome / (secretId & ".txt.gpg")
+  let plainPath = secretsHome / (secretId & ".txt.plain")
+  let tmp = path & ".tmp"
+  writeFile(plainPath, plaintext)
+  defer: removeFile(plainPath)
+  discard runGpg(@[
+    "--batch", "--yes", "--trust-model", "always",
+    "--cipher-algo", "AES256",
+    "--encrypt", "--recipient", recipient, "-o", tmp, plainPath])
+  moveFile(tmp, path)
 
 proc grimBin*(): string =
   let root = currentSourcePath().parentDir().parentDir()

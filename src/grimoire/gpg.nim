@@ -1,6 +1,6 @@
 ## Invoke the system gpg binary for encrypt/decrypt and key lookup.
 
-import std/[os, strutils, osproc, streams, tables]
+import std/[os, strutils, osproc, streams, times, tables]
 import grimoire/store
 
 type
@@ -24,6 +24,21 @@ proc runGpg*(args: openArray[string], stdinData = ""): string =
   if stdinData.len > 0:
     p.inputStream.write(stdinData)
     p.inputStream.flush()
+  p.inputStream.close()
+  let output = p.outputStream.readAll()
+  let code = p.waitForExit()
+  if code != 0:
+    raise newException(GpgError, output.strip())
+  output
+
+proc runGpgPassphrase*(passphrase: string, args: openArray[string]): string =
+  let gpg = gpgBin()
+  let p = startProcess(
+    command = gpg,
+    args = @args,
+    options = {poUsePath, poStdErrToStdOut})
+  p.inputStream.write(passphrase)
+  p.inputStream.flush()
   p.inputStream.close()
   let output = p.outputStream.readAll()
   let code = p.waitForExit()
@@ -56,8 +71,49 @@ proc encryptToRecipient*(recipient, plaintext: string): string =
     "--batch", "--yes", "--trust-model", "always",
     "--encrypt", "--recipient", recipient, "--armor"], plaintext).strip()
 
+proc encryptToRecipientFile*(
+    recipient, plaintext, outPath: string) =
+  let tmp = outPath & ".tmp." & $getTime().toUnix()
+  defer:
+    if fileExists(tmp):
+      removeFile(tmp)
+  discard runGpg(@[
+    "--batch", "--yes", "--trust-model", "always",
+    "--cipher-algo", "AES256",
+    "--encrypt", "--recipient", recipient, "-o", tmp], plaintext)
+  moveFile(tmp, outPath)
+
 proc decryptArmor*(armor: string): string =
   runGpg(@["--batch", "--quiet", "--decrypt"], armor).strip()
+
+proc decryptGpgFile*(path: string): string =
+  let data = readFile(path)
+  runGpg(@["--batch", "--quiet", "--decrypt"], data).strip()
+
+proc encryptSymmetric*(passphrase, plaintext: string): string =
+  let base = getTempDir() / ("grim-sym-" & $getTime().toUnix())
+  let inPath = base & ".in"
+  let outPath = base & ".asc"
+  defer:
+    if fileExists(inPath):
+      removeFile(inPath)
+    if fileExists(outPath):
+      removeFile(outPath)
+  writeFile(inPath, plaintext)
+  discard runGpgPassphrase(passphrase, @[
+    "--batch", "--yes", "--pinentry-mode", "loopback", "--passphrase-fd", "0",
+    "--symmetric", "--cipher-algo", "AES256", "--armor", "-o", outPath, inPath])
+  readFile(outPath).strip()
+
+proc decryptSymmetric*(passphrase, armor: string): string =
+  let inPath = getTempDir() / ("grim-sym-in-" & $getTime().toUnix() & ".asc")
+  defer:
+    if fileExists(inPath):
+      removeFile(inPath)
+  writeFile(inPath, armor)
+  runGpgPassphrase(passphrase, @[
+    "--batch", "--quiet", "--pinentry-mode", "loopback", "--passphrase-fd", "0",
+    "--decrypt", inPath]).strip()
 
 proc defaultRecipientHint*(): string =
   let fromEnv = getEnv("GRIM_GPG_RECIPIENT")
@@ -88,22 +144,3 @@ proc resolveDefaultRecipient*(): string =
     GpgError,
     "no GPG recipient; set --gpg-recipient, GRIM_GPG_RECIPIENT, or gpg.recipient in config")
 
-proc reencryptVaultSecrets*(
-    vaultId, oldRecipient, newRecipient: string) =
-  let secretIds = listSecretIds(vaultId)
-  var updated: seq[(string, string)] = @[]
-  for sid in secretIds:
-    let meta = readSecretMeta(vaultId, sid)
-    try:
-      let plain = decryptArmor(meta.valueEnc)
-      let enc = encryptToRecipient(newRecipient, plain)
-      updated.add (sid, enc)
-    except CatchableError as e:
-      raise newException(
-        GpgError,
-        "re-encrypt failed for secret " & sid & ": " & e.msg)
-  for pair in updated:
-    var meta = readSecretMeta(vaultId, pair[0])
-    meta.valueEnc = pair[1]
-    meta.updated = utcNow()
-    writeSecretMeta(vaultId, meta)
