@@ -1,6 +1,6 @@
 # grimoire
 
-*Grimoire* means “book of secrets” in French.   Here we use 'grim' for short.
+*Grimoire* (pronounced *grim-wahr*) means “book of secrets” in French.   Here we use 'grim' for short.
 
 **grim** is a local, GPG-backed password manager with a CLI shaped like 1Password (`op`) for scripts and automation. Vaults, items, and secrets live (encrypted) on disk under `GRIM_HOME` (default `~/.grimoire`).
 
