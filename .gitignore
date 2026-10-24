@@ -10,3 +10,6 @@ nimcache/
 /tests/**
 !/tests/**/
 !/tests/**/*.*
+nimble.develop
+nimble.paths
+nimbledeps

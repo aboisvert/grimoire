@@ -5,7 +5,7 @@
 ## Build
 
 ```bash
-nim c --path:src -o:grim src/grim.nim
+nimble build
 ```
 
 Requires Nim ≥ 2.2.12.
@@ -19,7 +19,7 @@ nimble test
 Or manually:
 
 ```bash
-nim c --path:src -o:grim src/grim.nim
+nimble build
 nim c -r --hints:off --path:src tests/tproperties.nim
 nim c -r --hints:off --path:src tests/tstore.nim
 nim c -r --hints:off --path:src tests/treference.nim

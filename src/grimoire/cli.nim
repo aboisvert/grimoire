@@ -10,20 +10,78 @@ type
 const
   Version* = "0.1.0"
 
-  TopUsage* = """
-Usage:
-  grim vault list|get|create|edit|delete|use|rotate-secret ...
-  grim item list|get|create|edit ...
-  grim account list ...
-  grim service-account create ...
-  grim secret list|get|create|edit|delete ...
-  grim read [--no-newline] <grim://|op://>reference
-  grim inject [-i file] [-o file]
-  grim run [--env-file file] [--no-masking] -- <command> [args...]
+  HelpBody* = """Local, GPG-backed secrets manager with a 1Password CLI (op) compatible surface.
 
-  grim --help
-  grim --version
-"""
+Usage:
+  grim <command> [options] [arguments]
+
+Global options:
+  -h, --help       Show this help
+  -v, --version    Print version
+
+Commands:
+  vault             Manage vaults and GPG recipients
+  item              Manage vault items (JSON API)
+  account           Local account metadata
+  service-account   Scoped tokens for automation
+  secret            Single-field secrets (human-oriented)
+  read              Print a secret reference to stdout
+  inject            Substitute grim:// and op:// references in text
+  run               Run a command with resolved secret references
+
+Environment:
+  GRIM_HOME                    Data directory (default ~/.grimoire)
+  SECRETS_HOME                 External symmetric key files (*.txt.gpg)
+  OP_SERVICE_ACCOUNT_TOKEN     Authenticate with a service account token
+
+Vault:
+  grim vault list [--format human|json] [--account <name>]
+  grim vault get <id> [--format human|json]
+  grim vault create <id> --gpg-recipient <key> [--secret <id>]
+        [--description <text>] [--default] [--account <name>]
+  grim vault create <name> --format json [--gpg-recipient <key>] [--account <name>]
+  grim vault edit <id> [--gpg-recipient <key>] [--secret <id>] [--description <text>]
+  grim vault delete <id> [--force]
+  grim vault use <id>
+  grim vault rotate-secret <newSecretId> [--vault <id>] [--value <text>|--stdin]
+
+Item (--format json required):
+  grim item list [--vault <ref>] [--account <name>]
+  grim item get <id> | -  --vault <ref> [--reveal] [--account <name>]
+  grim item create - [--vault <ref>] [--account <name>]   (JSON on stdin)
+  grim item edit <id> --vault <ref> [--account <name>]    (JSON on stdin)
+
+Account:
+  grim account list --format json
+
+Service account:
+  grim service-account create <name> --vault <vault:caps> --raw [--expires-in <dur>]
+        Caps: read_items, write_items (comma-separated)
+
+Secret:
+  grim secret list [--vault <id>] [--format human|json]
+  grim secret get <id> [--vault <id>] [--reveal] [--format human|json]
+  grim secret create <id> [--vault <id>] [--description <text>]
+        [--value <text>|--stdin]
+  grim secret edit <id> [--vault <id>] [--description <text>] [--value <text>|--stdin]
+  grim secret delete <id> [--vault <id>] [--force]
+
+Scripting:
+  grim read [--no-newline] <grim://|op:// reference>
+  grim inject [-i <file>] [-o <file>]
+  grim run [--env-file <file>] [--no-masking] -- <command> [args...]
+
+References:
+  grim://<vault>/<secret>          Secret by title in a vault
+  op://<vault>/<item>/<field>     Item field (op-compatible)
+
+Exit codes: 0 success, 1 error, 2 usage; grim run returns the child exit code."""
+
+  ## Shown on usage errors and when argv is empty.
+  TopUsage* = HelpBody
+
+proc printHelp*() =
+  stdout.writeLine("grim " & Version & "\n\n" & HelpBody)
 
 proc failUsage*(msg: string) {.noreturn.} =
   raise newException(UsageError, msg)

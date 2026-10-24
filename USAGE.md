@@ -5,7 +5,7 @@
 Build the binary:
 
 ```bash
-nim c --path:src -o:grim src/grim.nim
+nim c -o:grim src/grimoire.nim
 ```
 
 Throughout this document, `grim` means your built binary (or an installed copy on `PATH`).

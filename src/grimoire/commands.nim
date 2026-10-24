@@ -732,7 +732,7 @@ proc runGrim*(args: seq[string]) =
   if args.len == 0:
     failUsage(TopUsage)
   if args[0] in ["-h", "--help", "help"]:
-    stdout.writeLine TopUsage
+    printHelp()
     return
   if args[0] in ["-v", "--version", "version"]:
     stdout.writeLine "grim " & Version

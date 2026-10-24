@@ -23,7 +23,7 @@ description: >-
 ## Build and path
 
 ```bash
-nim c --path:src -o:grim src/grim.nim
+nim c -o:grim src/grimoire.nim
 ```
 
 Set `GRIM_BIN` or put `grim` on `PATH`. Integration tests use the repo’s `./grim` binary.
