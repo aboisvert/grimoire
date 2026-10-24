@@ -1,12 +1,20 @@
-import std/[os, osproc, strutils, times, random]
+import std/[os, osproc, strutils, streams]
+
+var tempDirSeq = 0
 
 proc makeTempDir(prefix: string): string =
-  # Sub-second tests (e.g. CI) must not reuse the same path; second-only
-  # timestamps caused cross-test GRIM_HOME leakage and flaky op compat tests.
-  let base = getTempDir() / (
-    prefix & "-" & $getTime().toUnixFloat() & "-" & $rand(1_000_000_000))
-  createDir(base)
-  result = base
+  # Unique across tests in one process without a wall-clock timestamp.
+  # The name stays short so GNUPGHOME + "/S.gpg-agent.browser" fits in
+  # macOS's 103-byte Unix socket path limit. A fractional timestamp plus
+  # a large random suffix made that socket path too long and gpg-agent
+  # failed to start.
+  for _ in 0 .. 100:
+    inc tempDirSeq
+    let base = getTempDir() / (prefix & "-" & $getCurrentProcessId() & "-" & $tempDirSeq)
+    if not dirExists(base):
+      createDir(base)
+      return base
+  raise newException(ValueError, "could not create temp dir for " & prefix)
 
 proc gpgPath(): string =
   let exe = findExe("gpg")
@@ -40,12 +48,15 @@ Expire-Date: 0
 %no-protection
 %commit
 """)
-  let code = startProcess(
+  let p = startProcess(
     gpgPath(),
     args = @["--batch", "--generate-key", batch],
-    options = {poUsePath, poStdErrToStdOut}).waitForExit()
+    options = {poUsePath, poStdErrToStdOut})
+  let output = p.outputStream.readAll()
+  let code = p.waitForExit()
   if code != 0:
-    raise newException(ValueError, "failed to generate test GPG key for " & email)
+    raise newException(ValueError,
+      "failed to generate test GPG key for " & email & ":\n" & output)
 
 proc setupGpgHome*(): (string, string) =
   ## Returns (gpgHome, recipientFingerprint).
