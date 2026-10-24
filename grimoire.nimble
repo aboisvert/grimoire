@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.1"
+version       = "0.1.2"
 author        = "Alex Boisvert"
 description   = "Local GPG-backed password manager CLI (grim)"
 license       = "MIT"
