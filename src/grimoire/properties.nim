@@ -1,6 +1,7 @@
 ## Java-style properties read/write with minimal escaping.
 
-import std/[strutils, tables, os, times, random]
+import std/[strutils, tables, os, times]
+import grimoire/randomutil
 
 type
   Properties* = OrderedTable[string, string]
@@ -61,7 +62,7 @@ proc serializeProperties*(props: Properties): string =
 proc writePropertiesFileAtomic*(path: string, props: Properties) =
   let dir = path.parentDir
   createDir(dir)
-  let tmp = dir / (".tmp-" & $getTime().toUnix() & "-" & $rand(999_999))
+  let tmp = dir / (".tmp-" & $getTime().toUnix() & "-" & randomLowerAlnum(12))
   writeFile(tmp, serializeProperties(props))
   setFilePermissions(tmp, {fpUserRead, fpUserWrite})
   moveFile(tmp, path)

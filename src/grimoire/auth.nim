@@ -1,14 +1,8 @@
 ## Local account and service-account token grants.
 
-import std/[json, os, strutils, times, parseutils, random, tables]
+import std/[json, os, strutils, times, parseutils, tables]
 import checksums/sha1
-import grimoire/[store, jsonfmt]
-
-proc randomLowerAlnum(n: int): string =
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-  result = newString(n)
-  for i in 0 ..< n:
-    result[i] = chars[rand(chars.high)]
+import grimoire/[store, jsonfmt, randomutil]
 
 type
   Grant* = object

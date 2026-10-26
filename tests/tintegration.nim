@@ -47,6 +47,21 @@ suite "integration":
     check "s3cret" in revealed
     check runGrimOut(@["read", "grim://personal/db"]) == "s3cret"
 
+  test "multiple secrets in one vault get distinct item ids":
+    runGrim(@[
+      "vault", "create", "multi", "--gpg-recipient", fpr])
+    runGrim(@[
+      "secret", "create", "alpha", "--vault", "multi", "--value", "one"])
+    runGrim(@[
+      "secret", "create", "beta", "--vault", "multi", "--value", "two"])
+    check "one" in runGrimOut(@[
+      "secret", "get", "alpha", "--vault", "multi", "--reveal"])
+    check "two" in runGrimOut(@[
+      "secret", "get", "beta", "--vault", "multi", "--reveal"])
+    let listed = runGrimOut(@["secret", "list", "--vault", "multi"])
+    check "alpha" in listed
+    check "beta" in listed
+
   test "inject template":
     runGrim(@[
       "vault", "create", "app", "--gpg-recipient", fpr])

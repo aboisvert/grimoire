@@ -1,15 +1,11 @@
 ## op-shaped items stored as JSON under each vault.
 
-import std/[json, os, strutils, random, uri, times]
-import grimoire/[store, gpg, secretshome, jsonfmt]
+import std/[json, os, strutils, uri, times]
+import grimoire/[store, gpg, secretshome, jsonfmt, randomutil]
+
+export randomutil.randomLowerAlnum
 
 const OpItemIdLen* = 26
-
-proc randomLowerAlnum*(n: int): string =
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-  result = newString(n)
-  for i in 0 ..< n:
-    result[i] = chars[rand(chars.high)]
 
 proc generateOpItemId*(): string =
   randomLowerAlnum(OpItemIdLen)
