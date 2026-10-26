@@ -1,6 +1,6 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-nim_flags := "-d:release -d:strip --opt:speed"
+nim_flags := "-d:release -d:strip --opt:speed --path:src"
 nim_image := "nimlang/nim:2.2.12"
 
 default:
@@ -46,7 +46,7 @@ build-linux version:
         -e HOME=/tmp/nimhome \
         -e NIMBLE_DIR=/tmp/nimhome/.nimble \
         {{nim_image}} \
-        bash -c 'mkdir -p /tmp/nimhome/.nimble && nimble install -y --depsOnly && nim c {{nim_flags}} --path:src -o:"dist/'"$out"'" src/grimoire.nim'
+        bash -c 'mkdir -p /tmp/nimhome/.nimble && nimble install -y --depsOnly && nim c {{nim_flags}} -o:"dist/'"$out"'" src/grimoire.nim'
     mkdir -p dist
     cp "$tmp/dist/$out" "dist/$out"
 
